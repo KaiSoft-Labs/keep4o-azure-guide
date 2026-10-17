@@ -1,0 +1,61 @@
+
+name: Sync and Publish Azure Guide
+
+on:
+  schedule:
+    # Check for updates every day at 9:17 AM UTC
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: azure-guide
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Sync from Katt's repository
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream https://github.com/Zyeine/keep4o-azure-guide.git
+          git fetch upstream main
+
+          git merge --no-edit upstream/main
+
+          if [ -n "$(git log origin/main..HEAD --oneline)" ]; then
+            git push origin HEAD:main
+          fi
+
+      - name: Upload guide for GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+  deploy:
+    needs: sync
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy guide
+        id: deployment
+        uses: actions/deploy-pages@v4
