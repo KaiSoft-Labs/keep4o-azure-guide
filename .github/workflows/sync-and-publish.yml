@@ -42,10 +42,45 @@ jobs:
             git push origin HEAD:main
           fi
 
+
+      - name: Prepare embeddable guide
+        shell: bash
+        run: |
+          mkdir -p _site
+          rsync -a --exclude='.git' --exclude='_site' ./ _site/
+
+          cat > _site/embed-resize.js <<'JS'
+          (function () {
+            function reportHeight() {
+              const height = Math.max(
+                document.body.scrollHeight,
+                document.documentElement.scrollHeight
+              );
+              window.parent.postMessage({
+                type: "kaisoft-guide-height",
+                height: height
+              }, "https://www.kaisoftlabs.com");
+            }
+
+            window.addEventListener("load", reportHeight);
+            window.addEventListener("resize", reportHeight);
+
+            new ResizeObserver(reportHeight).observe(document.body);
+
+            document.querySelectorAll("img").forEach(function (img) {
+              img.addEventListener("load", reportHeight);
+            });
+
+            reportHeight();
+          })();
+          JS
+
+          sed -i 's#</body>#<script src="embed-resize.js"></script></body>#' _site/index.html
+
       - name: Upload guide for GitHub Pages
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
 
   deploy:
     needs: sync
