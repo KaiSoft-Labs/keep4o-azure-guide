@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout fork
+      - name: Checkout mirror
         uses: actions/checkout@v4
         with:
           ref: main
@@ -29,25 +29,52 @@ jobs:
           persist-credentials: true
 
       - name: Sync from Katt's repository
+        shell: bash
         run: |
+          set -euo pipefail
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git remote add upstream https://github.com/Zyeine/keep4o-azure-guide.git
           git fetch upstream main
 
-          git merge --no-edit upstream/main
+          # Sync files rather than merging unrelated Git histories.
+          upstream_dir="$(mktemp -d)"
+          trap 'rm -rf "$upstream_dir"' EXIT
 
-          if [ -n "$(git log origin/main..HEAD --oneline)" ]; then
+          git archive upstream/main | tar -x -C "$upstream_dir"
+
+          # Preserve the mirror's own GitHub Actions workflow.
+          mkdir -p "$upstream_dir/.github/workflows"
+          cp .github/workflows/sync-and-publish.yml \
+            "$upstream_dir/.github/workflows/sync-and-publish.yml"
+
+          # Replace local guide content with Katt's latest files.
+          # Preserve Git metadata and generated site output.
+          rsync -a --delete \
+            --exclude='.git/' \
+            --exclude='_site/' \
+            "$upstream_dir/" ./
+
+          git add -A
+
+          if ! git diff --cached --quiet; then
+            git commit -m "Sync guide content from Zyeine upstream"
             git push origin HEAD:main
+          else
+            echo "Guide is already up to date."
           fi
-
 
       - name: Prepare embeddable guide
         shell: bash
         run: |
           mkdir -p _site
-          rsync -a --exclude='.git' --exclude='_site' ./ _site/
+
+          rsync -a \
+            --exclude='.git' \
+            --exclude='_site' \
+            ./ _site/
 
           cat > _site/embed-resize.js <<'JS'
           (function () {
@@ -75,7 +102,9 @@ jobs:
           })();
           JS
 
-          sed -i 's#</body>#<script src="embed-resize.js"></script></body>#' _site/index.html
+          sed -i \
+            's#</body>#<script src="embed-resize.js"></script></body>#' \
+            _site/index.html
 
       - name: Upload guide for GitHub Pages
         uses: actions/upload-pages-artifact@v3
